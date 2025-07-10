@@ -23,7 +23,8 @@ const client = new PubSubClient('http://localhost:8080');
 
 // publishing
 const pubCfg = new EventPublisherConfig('my-org', 'orders', 'processor');
-const publisher = new EventPublisher(pubCfg, client, err => console.error(err));
+// Optional custom error handler receives the error and the list of events
+const publisher = new EventPublisher(pubCfg, client, (err, events) => console.error(err));
 await publisher.publish({ data: { message: 'hello' } });
 
 // consuming
@@ -31,7 +32,8 @@ const handler = async (events, commit) => {
   await commit(events.map(e => e.id));
 };
 const consCfg = new EventConsumerConfig('my-org', 'orders', 'processor', 10, 1000, handler);
-const consumer = new EventConsumer(client, handler, consCfg);
+// Optional error handler for the consumer
+const consumer = new EventConsumer(client, handler, consCfg, err => console.error(err));
 consumer.start();
 ```
 

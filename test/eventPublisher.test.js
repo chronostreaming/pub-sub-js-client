@@ -58,7 +58,10 @@ test('event publishing on error', async () => {
   const client = new PubSubClient(baseUrl);
   const cfg = new EventPublisherConfig('org', 'topic', 'sub');
   let errors = 0;
-  const publisher = new EventPublisher(cfg, client, () => errors++);
+  const publisher = new EventPublisher(cfg, client, (err, events) => {
+    errors++;
+    expect(Array.isArray(events)).toBe(true);
+  });
 
   const result = await publisher.publish({ data: 'msg' });
   expect(result).toBe(0);

@@ -55,7 +55,7 @@ export class PubSubClient {
       case 409:
         throw new EventConsumerException('Conflict while reading events');
       case 500:
-        throw new EventConsumerException('Internal Server Error');
+        throw new EventConsumerException('PubSub: Internal Server Error');
       default:
         return [];
     }
@@ -79,7 +79,7 @@ export class PubSubClient {
       case 404:
         throw new EventConsumerException('Subscription, topic or organization not found');
       case 500:
-        throw new EventConsumerException('Internal Server Error');
+        throw new EventConsumerException('PubSub: Internal Server Error');
       default:
         return 0;
     }

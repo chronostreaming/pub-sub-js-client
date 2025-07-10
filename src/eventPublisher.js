@@ -7,10 +7,10 @@ export class EventPublisherConfig {
 }
 
 export class EventPublisher {
-  constructor(config, client, errorHandler = () => {}) {
+  constructor(config, client, errorHandler) {
     this.config = config;
     this.client = client;
-    this.errorHandler = errorHandler;
+    this.errorHandler = errorHandler || (() => {});
   }
 
   async publish(eventRequest) {
@@ -21,7 +21,7 @@ export class EventPublisher {
     try {
       return await this.client.publishEvents(this.config.org, this.config.topic, eventRequests);
     } catch (e) {
-      this.errorHandler(e);
+      this.errorHandler(e, eventRequests);
       return 0;
     }
   }
