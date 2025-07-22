@@ -67,8 +67,11 @@ test('readEvents error', async () => {
     }
   });
   const client = new PubSubClient(baseUrl);
+  const origRandom = Math.random;
+  Math.random = () => 0;
   await expect(client.readEvents('org', 'topic', 'sub', 1))
-    .rejects.toThrow('Request failed');
+    .rejects.toThrow('Internal Server Error');
+  Math.random = origRandom;
 });
 
 test('commitEvents success', async () => {
@@ -89,8 +92,11 @@ test('commitEvents error', async () => {
     }
   });
   const client = new PubSubClient(baseUrl);
+  const origRandom = Math.random;
+  Math.random = () => 0;
   await expect(client.commitEvents('org', 'topic', 'sub', ['1']))
-    .rejects.toThrow('Request failed');
+    .rejects.toThrow('Internal Server Error');
+  Math.random = origRandom;
 });
 
 test('consumeEvents read error', async () => {
@@ -100,8 +106,11 @@ test('consumeEvents read error', async () => {
     }
   });
   const client = new PubSubClient(baseUrl);
+  const origRandom = Math.random;
+  Math.random = () => 0;
   await expect(client.consumeEvents('org', 'topic', 'sub', 1, () => {}))
-    .rejects.toThrow('Request failed');
+    .rejects.toThrow('Internal Server Error');
+  Math.random = origRandom;
 });
 
 test('consumeEvents commit error', async () => {
@@ -117,9 +126,89 @@ test('consumeEvents commit error', async () => {
     }
   });
   const client = new PubSubClient(baseUrl);
+  const origRandom = Math.random;
+  Math.random = () => 0;
   await expect(
     client.consumeEvents('org', 'topic', 'sub', 1, async (events, commit) => {
       await commit([events[0].id]);
     })
   ).rejects.toThrow(EventConsumerException);
+  Math.random = origRandom;
+});
+
+test('readEvents retry on conflict', async () => {
+  let calls = 0;
+  const msg = `[{"id":"1","data":{"msg":"ok"},"createdAt":"2025-07-01T00:00:00Z"}]`;
+  addContext('/org/topics/topic/subscriptions/sub/events?batchSize=1', (req, res) => {
+    if (req.method === 'GET') {
+      calls++;
+      if (calls < 4) {
+        sendJson(res, 409, 'err');
+      } else {
+        sendJson(res, 200, msg);
+      }
+    }
+  });
+  const client = new PubSubClient(baseUrl);
+  const origRandom = Math.random;
+  Math.random = () => 0;
+  const events = await client.readEvents('org', 'topic', 'sub', 1);
+  Math.random = origRandom;
+  expect(events.length).toBe(1);
+  expect(calls).toBe(4);
+});
+
+test('readEvents retry fails after max attempts', async () => {
+  let calls = 0;
+  addContext('/org/topics/topic/subscriptions/sub/events?batchSize=1', (req, res) => {
+    if (req.method === 'GET') {
+      calls++;
+      sendJson(res, 500, 'err');
+    }
+  });
+  const client = new PubSubClient(baseUrl);
+  const origRandom = Math.random;
+  Math.random = () => 0;
+  await expect(client.readEvents('org', 'topic', 'sub', 1))
+    .rejects.toThrow('Internal Server Error');
+  Math.random = origRandom;
+  expect(calls).toBe(4);
+});
+
+test('commitEvents retry on conflict', async () => {
+  let calls = 0;
+  addContext('/org/topics/topic/subscriptions/sub/event-commits', (req, res) => {
+    if (req.method === 'POST') {
+      calls++;
+      if (calls < 4) {
+        sendJson(res, 409, 'err');
+      } else {
+        sendJson(res, 200, '1');
+      }
+    }
+  });
+  const client = new PubSubClient(baseUrl);
+  const origRandom = Math.random;
+  Math.random = () => 0;
+  const result = await client.commitEvents('org', 'topic', 'sub', ['1']);
+  Math.random = origRandom;
+  expect(result).toBe(1);
+  expect(calls).toBe(4);
+});
+
+test('commitEvents retry fails after max attempts', async () => {
+  let calls = 0;
+  addContext('/org/topics/topic/subscriptions/sub/event-commits', (req, res) => {
+    if (req.method === 'POST') {
+      calls++;
+      sendJson(res, 500, 'err');
+    }
+  });
+  const client = new PubSubClient(baseUrl);
+  const origRandom = Math.random;
+  Math.random = () => 0;
+  await expect(client.commitEvents('org', 'topic', 'sub', ['1']))
+    .rejects.toThrow('Internal Server Error');
+  Math.random = origRandom;
+  expect(calls).toBe(4);
 });
