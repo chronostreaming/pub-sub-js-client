@@ -5,10 +5,10 @@ export class PubSubClient {
     this.baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
   }
 
-  async send(url, options) {
+  async send(url, options, throwOnError = true) {
     const resp = await fetch(url, options);
     const text = await resp.text();
-    if (resp.status >= 400) {
+    if (throwOnError && resp.status >= 400) {
       throw new Error(`Request failed with status code ${resp.status}`);
     }
     return { status: resp.status, body: text };
@@ -40,48 +40,80 @@ export class PubSubClient {
 
   async readEvents(org, topic, sub, batchSize) {
     const url = `${this.baseUrl}/${org}/topics/${topic}/subscriptions/${sub}/events?batchSize=${batchSize}`;
-    const resp = await this.send(url, {
+    const options = {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
-    });
+    };
 
-    switch (resp.status) {
-      case 200:
-        return JSON.parse(resp.body);
-      case 204:
-        return [];
-      case 404:
-        throw new EventConsumerException('Subscription, topic or organization not found');
-      case 409:
-        throw new EventConsumerException('Conflict while reading events');
-      case 500:
-        throw new EventConsumerException('Internal Server Error');
-      default:
-        return [];
+    const maxRetries = 3;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const resp = await this.send(url, options, false);
+
+      switch (resp.status) {
+        case 200:
+          return JSON.parse(resp.body);
+        case 204:
+          return [];
+        case 404:
+          throw new EventConsumerException('Subscription, topic or organization not found');
+        case 409:
+        case 500:
+          if (attempt < maxRetries) {
+            const pause = Math.random() * 100000;
+            await new Promise(res => setTimeout(res, pause));
+            continue;
+          }
+          if (resp.status === 409) {
+            throw new EventConsumerException('Conflict while reading events');
+          }
+          throw new EventConsumerException('Internal Server Error');
+        default:
+          if (resp.status >= 400) {
+            throw new Error(`Request failed with status code ${resp.status}`);
+          }
+          return [];
+      }
     }
   }
 
   async commitEvents(org, topic, sub, eventIds) {
     const url = `${this.baseUrl}/${org}/topics/${topic}/subscriptions/${sub}/event-commits`;
-    const resp = await this.send(url, {
+    const options = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(eventIds)
-    });
+    };
 
-    switch (resp.status) {
-      case 200:
-        return parseInt(resp.body);
-      case 204:
-        return 0;
-      case 400:
-        throw new EventConsumerException('Error on your request:' + resp.body);
-      case 404:
-        throw new EventConsumerException('Subscription, topic or organization not found');
-      case 500:
-        throw new EventConsumerException('Internal Server Error');
-      default:
-        return 0;
+    const maxRetries = 3;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const resp = await this.send(url, options, false);
+
+      switch (resp.status) {
+        case 200:
+          return parseInt(resp.body);
+        case 204:
+          return 0;
+        case 400:
+          throw new EventConsumerException('Error on your request:' + resp.body);
+        case 404:
+          throw new EventConsumerException('Subscription, topic or organization not found');
+        case 409:
+        case 500:
+          if (attempt < maxRetries) {
+            const pause = Math.random() * 100000;
+            await new Promise(res => setTimeout(res, pause));
+            continue;
+          }
+          if (resp.status === 409) {
+            throw new EventConsumerException('Conflict while committing events');
+          }
+          throw new EventConsumerException('Internal Server Error');
+        default:
+          if (resp.status >= 400) {
+            throw new Error(`Request failed with status code ${resp.status}`);
+          }
+          return 0;
+      }
     }
   }
 
